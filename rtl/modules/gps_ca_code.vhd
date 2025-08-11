@@ -6,22 +6,23 @@ entity gps_ca_code is
     Port (
         clk_i     : in STD_LOGIC;
         rstn_i    : in STD_LOGIC;
-        sv_sel_i  : in INTEGER range 1 to 37; -- Input for SV selection
+        sv_sel_i  : in NATURAL range 1 to 37; -- Input for SV selection
         ca_chip_o : out STD_LOGIC
     );
 end gps_ca_code;
 
 architecture Behavioral of gps_ca_code is
+    signal sv_sel  : NATURAL range 1 to 37;
     signal g1      : STD_LOGIC_VECTOR(10-1 downto 0);
     signal g2      : STD_LOGIC_VECTOR(10-1 downto 0);
     signal g2_taps : STD_LOGIC;
-    signal count   : integer range 0 to 1023;
+    signal count   : natural range 0 to 1023;
 begin
     -- Define G2 taps based on SV number
-    process(sv_sel_i, g2)
+    process(sv_sel, g2)
     begin
-        case sv_sel_i is
-			-- according to IS-GPS-200N
+        case sv_sel is
+            -- according to IS-GPS-200N
             when 1  => g2_taps <= g2(1) xor g2(5);
             when 2  => g2_taps <= g2(2) xor g2(6);
             when 3  => g2_taps <= g2(3) xor g2(7);
@@ -66,22 +67,31 @@ begin
     process(clk_i, rstn_i)
     begin
         if rstn_i = '0' then
+            sv_sel <= 1;
             g1 <= (others => '1');
             g2 <= (others => '1');
             count <= 0;
-			ca_chip_o <= '0';
+            ca_chip_o <= '0';
         elsif rising_edge(clk_i) then
-            if count < 1023 then
+            if sv_sel /= sv_sel_i then
+                sv_sel <= sv_sel_i;
+                g1 <= (others => '1');
+                g2 <= (others => '1');
+                count <= 0;
+                ca_chip_o <= '0';
+            else
                 -- LFSR Polynomial G1: 1 + x^3 + x^10
                 g1 <= g1(8 downto 0) & (g1(2) xor g1(9));
 
                 -- LFSR Polynomial G2: 1 + x^2 + x^3 + x^6 + x^8 + x^9 + x^10
                 g2 <= g2(8 downto 0) & (g2(1) xor g2(2) xor g2(5) xor g2(7) xor g2(8) xor g2(9));
 
-                count <= count + 1;
-				ca_chip_o <= g1(9) xor g2_taps;
-            else
-                count <= 0;
+                ca_chip_o <= g1(9) xor g2_taps;
+                if count < 1023 then
+                    count <= count + 1;
+                else
+                    count <= 1;
+                end if;
             end if;
         end if;
     end process;
